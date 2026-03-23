@@ -20,6 +20,8 @@ import Register from './pages/Register.jsx'
 import Checkout from './pages/Checkout.jsx'
 import Admin from './pages/Admin.jsx'
 import Profile from './pages/Profile.jsx'
+import InfoPage from './pages/InfoPage.jsx'
+import NotFound from './pages/NotFound.jsx'
 
 function App() {
   return (
@@ -40,6 +42,16 @@ function App() {
                   <Route path="/checkout" element={<ProtectedRoute><Checkout /></ProtectedRoute>} />
                   <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
                   <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                  <Route path="/about" element={<InfoPage />} />
+                  <Route path="/contact" element={<InfoPage />} />
+                  <Route path="/shipping" element={<InfoPage />} />
+                  <Route path="/returns" element={<InfoPage />} />
+                  <Route path="/size-guide" element={<InfoPage />} />
+                  <Route path="/faq" element={<InfoPage />} />
+                  <Route path="/privacy" element={<InfoPage />} />
+                  <Route path="/terms" element={<InfoPage />} />
+                  <Route path="/cookies" element={<InfoPage />} />
+                  <Route path="*" element={<NotFound />} />
                 </Routes>
               </main>
               <Footer />

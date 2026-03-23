@@ -13,7 +13,7 @@ const Shop = () => {
   useEffect(() => {
     const category = searchParams.get('category') || ''
     const search = searchParams.get('search') || ''
-    const sortBy = searchParams.get('sort') || 'name'
+    const sortBy = searchParams.get('sortBy') || searchParams.get('sort') || 'name'
     
     updateFilters({ category, search, sortBy })
   }, [searchParams])
@@ -24,10 +24,11 @@ const Shop = () => {
     // Update URL params
     const params = new URLSearchParams(searchParams)
     Object.entries(newFilters).forEach(([key, value]) => {
+      const queryKey = key === 'sortBy' ? 'sortBy' : key
       if (value) {
-        params.set(key, value)
+        params.set(queryKey, value)
       } else {
-        params.delete(key)
+        params.delete(queryKey)
       }
     })
     setSearchParams(params)

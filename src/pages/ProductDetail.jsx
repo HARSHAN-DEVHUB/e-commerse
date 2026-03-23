@@ -21,7 +21,7 @@ const ProductDetail = () => {
     }
 
     fetchProduct()
-  }, [id, getProductById])
+  }, [id])
 
   const handleAddToCart = () => {
     if (product) {
@@ -71,6 +71,10 @@ const ProductDetail = () => {
 
   const cartItem = getCartItem(product.id)
   const isInCart = !!cartItem
+  const imageList = Array.isArray(product.images) && product.images.length > 0
+    ? product.images
+    : [product.image || 'https://placehold.co/600x600']
+  const displayImage = imageList[selectedImage] || imageList[0]
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -86,16 +90,16 @@ const ProductDetail = () => {
           <div>
             <div className="aspect-w-1 aspect-h-1 w-full overflow-hidden rounded-lg">
               <img
-                src={product.image || 'https://placehold.co/600x600'}
+                src={displayImage}
                 alt={product.name}
                 className="w-full h-full object-cover"
               />
             </div>
             
             {/* Thumbnail images (if multiple images) */}
-            {product.images && product.images.length > 1 && (
+            {imageList.length > 1 && (
               <div className="mt-4 flex space-x-2">
-                {product.images.map((image, index) => (
+                {imageList.map((image, index) => (
                   <button
                     key={index}
                     onClick={() => setSelectedImage(index)}

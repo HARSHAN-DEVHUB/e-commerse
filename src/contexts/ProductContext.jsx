@@ -22,6 +22,14 @@ export const ProductProvider = ({ children }) => {
     sortBy: 'name'
   })
 
+  const normalizeProduct = (product) => ({
+    ...product,
+    price: Number(product.price),
+    image: product.image || product.imageUrl || product.image_url,
+    imageUrl: product.imageUrl || product.image_url,
+    categoryId: product.categoryId || product.category_id
+  })
+
   useEffect(() => {
     fetchProducts()
     fetchCategories()
@@ -32,10 +40,7 @@ export const ProductProvider = ({ children }) => {
       setLoading(true)
       const response = await api.get('/products?limit=100')
       const data = response.data || []
-      setProducts(data.map((product) => ({
-        ...product,
-        image: product.imageUrl || product.image_url
-      })))
+      setProducts(data.map(normalizeProduct))
     } catch (error) {
       console.error('Failed to fetch products:', error)
     } finally {
@@ -56,10 +61,7 @@ export const ProductProvider = ({ children }) => {
     try {
       const response = await api.get(`/products/${id}`)
       const data = response.data
-      return {
-        ...data,
-        image: data.imageUrl || data.image_url
-      }
+      return normalizeProduct(data)
     } catch (error) {
       console.error('Failed to fetch product:', error)
       return null
@@ -126,7 +128,7 @@ export const ProductProvider = ({ children }) => {
   const addProduct = async (productData) => {
     try {
       const response = await api.post('/products', productData)
-      const newProduct = response.data
+      const newProduct = normalizeProduct(response.data)
       setProducts((prev) => [...prev, newProduct])
       return { success: true, product: newProduct }
     } catch (error) {
@@ -137,7 +139,7 @@ export const ProductProvider = ({ children }) => {
   const updateProduct = async (id, productData) => {
     try {
       const response = await api.put(`/products/${id}`, productData)
-      const updatedProduct = response.data
+      const updatedProduct = normalizeProduct(response.data)
       setProducts((prev) =>
         prev.map((product) =>
           product.id === id ? updatedProduct : product

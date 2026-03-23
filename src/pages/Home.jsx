@@ -39,7 +39,7 @@ const Home = () => {
                 <Link to="/shop" className="btn-primary text-lg px-8 py-3">
                   Shop Now
                 </Link>
-                <Link to="/about" className="btn-secondary text-lg px-8 py-3">
+                <Link to="/shop" className="btn-secondary text-lg px-8 py-3">
                   Learn More
                 </Link>
               </div>
@@ -171,10 +171,10 @@ const Home = () => {
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              { name: 'Men', image: 'https://via.placeholder.com/300x400', link: '/shop?category=men' },
-              { name: 'Women', image: 'https://via.placeholder.com/300x400', link: '/shop?category=women' },
-              { name: 'Accessories', image: 'https://via.placeholder.com/300x400', link: '/shop?category=accessories' },
-              { name: 'Footwear', image: 'https://via.placeholder.com/300x400', link: '/shop?category=footwear' }
+              { name: 'T-Shirts', image: 'https://via.placeholder.com/300x400', link: '/shop?category=T-Shirts' },
+              { name: 'Hoodies', image: 'https://via.placeholder.com/300x400', link: '/shop?category=Hoodies' },
+              { name: 'Jeans', image: 'https://via.placeholder.com/300x400', link: '/shop?category=Jeans' },
+              { name: 'Accessories', image: 'https://via.placeholder.com/300x400', link: '/shop?category=Accessories' }
             ].map((category, index) => (
               <Link key={index} to={category.link} className="group">
                 <div className="relative overflow-hidden rounded-lg">
