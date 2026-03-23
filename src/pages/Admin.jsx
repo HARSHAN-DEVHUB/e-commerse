@@ -21,6 +21,7 @@ const Admin = () => {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('')
   const [form, setForm] = useState(emptyForm)
+  const [imageFile, setImageFile] = useState(null)
   const [saving, setSaving] = useState(false)
 
   const isEdit = useMemo(() => form.id !== null, [form.id])
@@ -66,6 +67,7 @@ const Admin = () => {
 
   const resetForm = () => {
     setForm(emptyForm)
+    setImageFile(null)
   }
 
   const onEdit = (product) => {
@@ -78,6 +80,27 @@ const Admin = () => {
       image_url: product.imageUrl || '',
       stock: product.stock
     })
+    setImageFile(null)
+  }
+
+  const uploadProductImage = async (productId, file) => {
+    const token = localStorage.getItem('token')
+    const formData = new FormData()
+    formData.append('image', file)
+
+    const response = await fetch(`/api/products/${productId}/image`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: formData,
+      credentials: 'include'
+    })
+
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(payload?.error?.message || payload?.message || 'Failed to upload image')
+    }
+
+    return payload
   }
 
   const validateForm = () => {
@@ -109,11 +132,19 @@ const Admin = () => {
         stock: Number(form.stock)
       }
 
+      let savedProduct
       if (isEdit) {
-        await api.put(`/products/${form.id}`, payload)
+        const response = await api.put(`/products/${form.id}`, payload)
+        savedProduct = response.data
       } else {
-        await api.post('/products', payload)
+        const response = await api.post('/products', payload)
+        savedProduct = response.data
       }
+
+      if (imageFile) {
+        await uploadProductImage(savedProduct.id, imageFile)
+      }
+
       resetForm()
       await fetchProducts(page)
     } catch (requestError) {
@@ -209,6 +240,12 @@ const Admin = () => {
             </select>
             <input className="input-field" name="stock" type="number" placeholder="Stock" value={form.stock} onChange={onFormChange} />
             <input className="input-field" name="image_url" placeholder="Image URL" value={form.image_url} onChange={onFormChange} />
+            <input
+              className="input-field"
+              type="file"
+              accept="image/*"
+              onChange={(event) => setImageFile(event.target.files?.[0] || null)}
+            />
 
             <div className="flex gap-2">
               <button className="btn-primary" disabled={saving}>{saving ? 'Saving...' : isEdit ? 'Update' : 'Create'}</button>

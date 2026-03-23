@@ -95,6 +95,51 @@ async function main() {
       await prisma.product.create({ data: product })
     }
   }
+
+  const bulkCategoryNames = ['T-Shirts', 'Hoodies', 'Jeans', 'Accessories']
+  const descriptors = ['Heritage', 'Signature', 'Modern', 'Classic', 'Royal', 'Prestige', 'Elite', 'Artisan']
+  const fits = ['Slim', 'Relaxed', 'Tailored', 'Regular']
+  const fabrics = ['Cotton', 'Linen', 'Fleece', 'Denim', 'Wool Blend']
+
+  const bulkProducts = []
+  const totalBulkProducts = Number(process.env.SEED_BULK_PRODUCT_COUNT || 240)
+
+  for (let i = 1; i <= totalBulkProducts; i += 1) {
+    const categoryName = bulkCategoryNames[i % bulkCategoryNames.length]
+    const descriptor = descriptors[i % descriptors.length]
+    const fit = fits[i % fits.length]
+    const fabric = fabrics[i % fabrics.length]
+    const categoryId = categoryByName[categoryName]
+    const price = Number((24 + (i % 45) * 1.85).toFixed(2))
+    const stock = 20 + (i % 120)
+
+    bulkProducts.push({
+      name: `${descriptor} ${categoryName.replace('-', ' ')} ${String(i).padStart(3, '0')}`,
+      description: `${fit} fit ${categoryName.toLowerCase()} crafted in premium ${fabric.toLowerCase()} for elevated everyday wear.`,
+      price,
+      stock,
+      categoryId,
+      imageUrl: `https://placehold.co/600x800?text=${encodeURIComponent(`${descriptor} ${categoryName} ${i}`)}`
+    })
+  }
+
+  for (const product of bulkProducts) {
+    const existing = await prisma.product.findFirst({ where: { name: product.name } })
+    if (existing) {
+      await prisma.product.update({
+        where: { id: existing.id },
+        data: {
+          description: product.description,
+          price: product.price,
+          stock: product.stock,
+          categoryId: product.categoryId,
+          imageUrl: product.imageUrl
+        }
+      })
+    } else {
+      await prisma.product.create({ data: product })
+    }
+  }
 }
 
 main()

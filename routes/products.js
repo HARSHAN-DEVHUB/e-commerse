@@ -1,4 +1,6 @@
 const express = require('express')
+const path = require('path')
+const multer = require('multer')
 const { Prisma } = require('@prisma/client')
 const validate = require('../middleware/validate')
 const { authenticateToken, requireAdmin } = require('../middleware/auth')
@@ -15,6 +17,26 @@ const {
 const { createProductSchema, updateProductSchema } = require('../validators/productValidator')
 
 const router = express.Router()
+
+const storage = multer.diskStorage({
+  destination: 'uploads/',
+  filename: (_req, file, cb) => {
+    const extension = path.extname(file.originalname || '').toLowerCase()
+    const safeExt = extension || '.jpg'
+    cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${safeExt}`)
+  }
+})
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype?.startsWith('image/')) {
+      return cb(null, true)
+    }
+    return cb(new AppError(400, 'INVALID_IMAGE_TYPE', 'Only image files are allowed'))
+  }
+})
 
 router.get('/', async (req, res, next) => {
   try {
@@ -145,6 +167,32 @@ router.delete('/:id', authenticateToken, requireAdmin, writeRateLimit, async (re
       success: true,
       data: {
         message: 'Product deleted successfully',
+        product
+      }
+    })
+  } catch (error) {
+    if (error.code === 'P2025') {
+      return next(new AppError(404, 'PRODUCT_NOT_FOUND', 'Product not found'))
+    }
+    next(error)
+  }
+})
+
+router.post('/:id/image', authenticateToken, requireAdmin, writeRateLimit, upload.single('image'), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id)
+
+    if (!req.file) {
+      throw new AppError(400, 'IMAGE_REQUIRED', 'Please provide an image file')
+    }
+
+    const imagePath = `/uploads/${req.file.filename}`
+    const product = await updateProduct(id, { imageUrl: imagePath })
+
+    res.json({
+      success: true,
+      data: {
+        message: 'Product image updated successfully',
         product
       }
     })
