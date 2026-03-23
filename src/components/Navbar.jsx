@@ -20,8 +20,8 @@ const Navbar = () => {
     }
   }
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await logout()
     navigate('/')
   }
 
@@ -45,11 +45,8 @@ const Navbar = () => {
             <Link to="/shop" className="text-gray-700 hover:text-primary-600 transition-colors">
               Shop
             </Link>
-            <Link to="/about" className="text-gray-700 hover:text-primary-600 transition-colors">
-              About
-            </Link>
-            <Link to="/contact" className="text-gray-700 hover:text-primary-600 transition-colors">
-              Contact
+            <Link to="/profile" className="text-gray-700 hover:text-primary-600 transition-colors">
+              Account
             </Link>
           </div>
 
@@ -176,18 +173,11 @@ const Navbar = () => {
                 Shop
               </Link>
               <Link
-                to="/about"
+                to="/profile"
                 className="block px-3 py-2 text-gray-700 hover:text-primary-600"
                 onClick={() => setIsMenuOpen(false)}
               >
-                About
-              </Link>
-              <Link
-                to="/contact"
-                className="block px-3 py-2 text-gray-700 hover:text-primary-600"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                Contact
+                Account
               </Link>
               
               {/* Mobile search */}

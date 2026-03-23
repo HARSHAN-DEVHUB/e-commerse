@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import { api } from '../lib/api.jsx'
 
 const AuthContext = createContext()
 
@@ -27,18 +28,9 @@ export const AuthProvider = ({ children }) => {
 
   const verifyToken = async (token) => {
     try {
-      const response = await fetch('/api/auth/verify', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-      
-      if (response.ok) {
-        const userData = await response.json()
-        setUser(userData)
-      } else {
-        localStorage.removeItem('token')
-      }
+      localStorage.setItem('token', token)
+      const response = await api.get('/auth/verify')
+      setUser(response.data)
     } catch (error) {
       console.error('Token verification failed:', error)
       localStorage.removeItem('token')
@@ -49,79 +41,44 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email, password })
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        localStorage.setItem('token', data.token)
-        setUser(data.user)
-        return { success: true }
-      } else {
-        return { success: false, error: data.message }
-      }
+      const response = await api.post('/auth/login', { email, password })
+      localStorage.setItem('token', response.data.token)
+      setUser(response.data.user)
+      return { success: true }
     } catch (error) {
-      return { success: false, error: 'Login failed' }
+      return { success: false, error: error.message || 'Login failed' }
     }
   }
 
   const register = async (userData) => {
     try {
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(userData)
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        localStorage.setItem('token', data.token)
-        setUser(data.user)
-        return { success: true }
-      } else {
-        return { success: false, error: data.message }
-      }
+      const response = await api.post('/auth/register', userData)
+      localStorage.setItem('token', response.data.token)
+      setUser(response.data.user)
+      return { success: true }
     } catch (error) {
-      return { success: false, error: 'Registration failed' }
+      return { success: false, error: error.message || 'Registration failed' }
     }
   }
 
-  const logout = () => {
-    localStorage.removeItem('token')
-    setUser(null)
+  const logout = async () => {
+    try {
+      await api.post('/auth/logout', {})
+    } catch (_error) {
+      // Ignore logout API errors and clear local session anyway.
+    } finally {
+      localStorage.removeItem('token')
+      setUser(null)
+    }
   }
 
   const updateProfile = async (profileData) => {
     try {
-      const token = localStorage.getItem('token')
-      const response = await fetch('/api/auth/profile', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(profileData)
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        setUser(data.user)
-        return { success: true }
-      } else {
-        return { success: false, error: data.message }
-      }
+      const response = await api.put('/auth/profile', profileData)
+      setUser(response.data.user)
+      return { success: true }
     } catch (error) {
-      return { success: false, error: 'Profile update failed' }
+      return { success: false, error: error.message || 'Profile update failed' }
     }
   }
 

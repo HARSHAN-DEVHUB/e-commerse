@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import { api } from '../lib/api.jsx'
 
 const ProductContext = createContext()
 
@@ -29,14 +30,12 @@ export const ProductProvider = ({ children }) => {
   const fetchProducts = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/products')
-      if (response.ok) {
-        const data = await response.json()
-        setProducts(data.map(product => ({
-          ...product,
-          image: product.image_url
-        })))
-      }
+      const response = await api.get('/products?limit=100')
+      const data = response.data || []
+      setProducts(data.map((product) => ({
+        ...product,
+        image: product.imageUrl || product.image_url
+      })))
     } catch (error) {
       console.error('Failed to fetch products:', error)
     } finally {
@@ -46,11 +45,8 @@ export const ProductProvider = ({ children }) => {
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch('/api/categories')
-      if (response.ok) {
-        const data = await response.json()
-        setCategories(data)
-      }
+      const response = await api.get('/categories?limit=100')
+      setCategories(response.data || [])
     } catch (error) {
       console.error('Failed to fetch categories:', error)
     }
@@ -58,15 +54,12 @@ export const ProductProvider = ({ children }) => {
 
   const getProductById = async (id) => {
     try {
-      const response = await fetch(`/api/products/${id}`)
-      if (response.ok) {
-        const data = await response.json()
-        return {
-          ...data,
-          image: data.image_url
-        }
+      const response = await api.get(`/products/${id}`)
+      const data = response.data
+      return {
+        ...data,
+        image: data.imageUrl || data.image_url
       }
-      return null
     } catch (error) {
       console.error('Failed to fetch product:', error)
       return null
@@ -132,77 +125,37 @@ export const ProductProvider = ({ children }) => {
 
   const addProduct = async (productData) => {
     try {
-      const token = localStorage.getItem('token')
-      const response = await fetch('/api/products', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(productData)
-      })
-
-      if (response.ok) {
-        const newProduct = await response.json()
-        setProducts(prev => [...prev, newProduct])
-        return { success: true, product: newProduct }
-      } else {
-        const error = await response.json()
-        return { success: false, error: error.message }
-      }
+      const response = await api.post('/products', productData)
+      const newProduct = response.data
+      setProducts((prev) => [...prev, newProduct])
+      return { success: true, product: newProduct }
     } catch (error) {
-      return { success: false, error: 'Failed to add product' }
+      return { success: false, error: error.message || 'Failed to add product' }
     }
   }
 
   const updateProduct = async (id, productData) => {
     try {
-      const token = localStorage.getItem('token')
-      const response = await fetch(`/api/products/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(productData)
-      })
-
-      if (response.ok) {
-        const updatedProduct = await response.json()
-        setProducts(prev => 
-          prev.map(product => 
-            product.id === id ? updatedProduct : product
-          )
+      const response = await api.put(`/products/${id}`, productData)
+      const updatedProduct = response.data
+      setProducts((prev) =>
+        prev.map((product) =>
+          product.id === id ? updatedProduct : product
         )
-        return { success: true, product: updatedProduct }
-      } else {
-        const error = await response.json()
-        return { success: false, error: error.message }
-      }
+      )
+      return { success: true, product: updatedProduct }
     } catch (error) {
-      return { success: false, error: 'Failed to update product' }
+      return { success: false, error: error.message || 'Failed to update product' }
     }
   }
 
   const deleteProduct = async (id) => {
     try {
-      const token = localStorage.getItem('token')
-      const response = await fetch(`/api/products/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      })
-
-      if (response.ok) {
-        setProducts(prev => prev.filter(product => product.id !== id))
-        return { success: true }
-      } else {
-        const error = await response.json()
-        return { success: false, error: error.message }
-      }
+      await api.delete(`/products/${id}`)
+      setProducts((prev) => prev.filter((product) => product.id !== id))
+      return { success: true }
     } catch (error) {
-      return { success: false, error: 'Failed to delete product' }
+      return { success: false, error: error.message || 'Failed to delete product' }
     }
   }
 

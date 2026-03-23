@@ -1,30 +1,35 @@
 const express = require('express')
+const { parsePagination, buildPageMeta } = require('../utils/pagination')
+const AppError = require('../utils/AppError')
+const { listCategories, findCategoryById } = require('../repositories/categoryRepository')
+
 const router = express.Router()
-const pool = require('../config/db')
 
-// Get all categories
-router.get('/', async (req, res) => {
+router.get('/', async (req, res, next) => {
   try {
-    const result = await pool.query('SELECT * FROM categories ORDER BY id')
-    res.json(result.rows)
+    const { page, limit, skip } = parsePagination(req.query)
+    const { categories, total } = await listCategories({ skip, take: limit })
+
+    res.json({
+      success: true,
+      data: categories,
+      meta: buildPageMeta(page, limit, total)
+    })
   } catch (error) {
-    console.error('Error fetching categories:', error)
-    res.status(500).json({ message: 'Failed to fetch categories' })
+    next(error)
   }
 })
 
-// Get single category
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req, res, next) => {
   try {
-    const result = await pool.query('SELECT * FROM categories WHERE id = $1', [req.params.id])
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Category not found' })
+    const category = await findCategoryById(Number(req.params.id))
+    if (!category) {
+      throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Category not found')
     }
-    res.json(result.rows[0])
+    res.json({ success: true, data: category })
   } catch (error) {
-    console.error('Error fetching category:', error)
-    res.status(500).json({ message: 'Failed to fetch category' })
+    next(error)
   }
 })
 
-module.exports = router 
+module.exports = router

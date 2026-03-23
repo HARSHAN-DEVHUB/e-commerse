@@ -1,160 +1,204 @@
 const express = require('express')
-const { body, validationResult } = require('express-validator')
+const { Prisma } = require('@prisma/client')
+const validate = require('../middleware/validate')
+const { authenticateToken, requireAdmin } = require('../middleware/auth')
+const { writeRateLimit } = require('../middleware/rateLimiter')
+const { parsePagination, buildPageMeta } = require('../utils/pagination')
+const AppError = require('../utils/AppError')
+const prisma = require('../lib/prisma')
+const { createOrderSchema, updateOrderStatusSchema } = require('../validators/orderValidator')
+const {
+  listOrders,
+  findOrderById,
+  updateOrderStatus
+} = require('../repositories/orderRepository')
+
 const router = express.Router()
 
-// In-memory storage (replace with database in production)
-let orders = []
-
-// Middleware to verify JWT token
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization']
-  const token = authHeader && authHeader.split(' ')[1]
-
-  if (!token) {
-    return res.status(401).json({ message: 'Access token required' })
-  }
-
-  const jwt = require('jsonwebtoken')
-  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
-    if (err) {
-      return res.status(403).json({ message: 'Invalid token' })
-    }
-    req.user = user
-    next()
-  })
-}
-
-// Middleware to check admin role
-const requireAdmin = (req, res, next) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Admin access required' })
-  }
-  next()
-}
-
-// Create order
-router.post('/', authenticateToken, [
-  body('items').isArray({ min: 1 }).withMessage('At least one item is required'),
-  body('shippingAddress').isObject().withMessage('Shipping address is required'),
-  body('paymentMethod').notEmpty().withMessage('Payment method is required')
-], (req, res) => {
+router.post('/', authenticateToken, writeRateLimit, validate(createOrderSchema), async (req, res, next) => {
   try {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ message: errors.array()[0].msg })
+    const { items, shippingAddress, paymentMethod } = req.validated.body
+
+    const productIds = [...new Set(items.map((item) => item.productId))]
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, price: true, stock: true }
+    })
+
+    if (products.length !== productIds.length) {
+      throw new AppError(400, 'PRODUCT_NOT_FOUND', 'One or more products were not found')
     }
 
-    const { items, shippingAddress, paymentMethod, total } = req.body
+    const productMap = new Map(products.map((product) => [product.id, product]))
 
-    const newOrder = {
-      id: Date.now().toString(),
-      userId: req.user.userId,
-      items,
-      shippingAddress,
-      paymentMethod,
-      total,
-      status: 'pending',
-      createdAt: new Date()
+    for (const item of items) {
+      const product = productMap.get(item.productId)
+      if (item.quantity > product.stock) {
+        throw new AppError(400, 'INSUFFICIENT_STOCK', `Insufficient stock for product ${item.productId}`)
+      }
     }
 
-    orders.push(newOrder)
-    res.status(201).json(newOrder)
+    const subtotal = items.reduce((sum, item) => {
+      const product = productMap.get(item.productId)
+      return sum + Number(product.price) * item.quantity
+    }, 0)
+
+    const tax = subtotal * 0.08
+    const shipping = subtotal > 50 ? 0 : 5.99
+    const total = subtotal + tax + shipping
+
+    const order = await prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        userId: req.user.userId,
+        status: 'pending',
+        paymentMethod,
+        shippingAddress,
+        subtotal: new Prisma.Decimal(subtotal.toFixed(2)),
+        tax: new Prisma.Decimal(tax.toFixed(2)),
+        shipping: new Prisma.Decimal(shipping.toFixed(2)),
+        total: new Prisma.Decimal(total.toFixed(2)),
+        items: {
+          create: items.map((item) => ({
+            productId: item.productId,
+            quantity: item.quantity,
+            price: productMap.get(item.productId).price
+          }))
+        }
+      })
+
+      const orderWithItems = await tx.order.findUnique({
+        where: { id: created.id },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true, imageUrl: true }
+              }
+            }
+          }
+        }
+      })
+
+      for (const item of items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: { decrement: item.quantity } }
+        })
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.userId,
+          action: 'ORDER_CREATED',
+          entity: 'order',
+          entityId: String(created.id),
+          details: {
+            itemCount: items.length,
+            total
+          }
+        }
+      })
+
+      return orderWithItems
+    })
+
+    res.status(201).json({ success: true, data: order })
   } catch (error) {
-    console.error('Error creating order:', error)
-    res.status(500).json({ message: 'Failed to create order' })
+    next(error)
   }
 })
 
-// Get user orders
-router.get('/my-orders', authenticateToken, (req, res) => {
+router.get('/my-orders', authenticateToken, async (req, res, next) => {
   try {
-    const userOrders = orders.filter(order => order.userId === req.user.userId)
-    res.json(userOrders)
+    const { page, limit, skip } = parsePagination(req.query)
+    const { orders, total } = await listOrders({
+      where: { userId: req.user.userId },
+      skip,
+      take: limit
+    })
+
+    res.json({
+      success: true,
+      data: orders,
+      meta: buildPageMeta(page, limit, total)
+    })
   } catch (error) {
-    console.error('Error fetching user orders:', error)
-    res.status(500).json({ message: 'Failed to fetch orders' })
+    next(error)
   }
 })
 
-// Get single order
-router.get('/:id', authenticateToken, (req, res) => {
+router.get('/:id', authenticateToken, async (req, res, next) => {
   try {
-    const order = orders.find(o => o.id === req.params.id)
+    const order = await findOrderById(Number(req.params.id))
     if (!order) {
-      return res.status(404).json({ message: 'Order not found' })
+      throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found')
     }
 
-    // Check if user owns the order or is admin
     if (order.userId !== req.user.userId && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Access denied' })
+      throw new AppError(403, 'ACCESS_DENIED', 'Access denied')
     }
 
-    res.json(order)
+    res.json({ success: true, data: order })
   } catch (error) {
-    console.error('Error fetching order:', error)
-    res.status(500).json({ message: 'Failed to fetch order' })
+    next(error)
   }
 })
 
-// Get all orders (admin only)
-router.get('/', authenticateToken, requireAdmin, (req, res) => {
+router.get('/', authenticateToken, requireAdmin, async (req, res, next) => {
   try {
-    res.json(orders)
+    const { page, limit, skip } = parsePagination(req.query)
+    const status = req.query.status?.trim()
+    const userId = req.query.userId ? Number(req.query.userId) : undefined
+
+    const where = {
+      ...(status ? { status } : {}),
+      ...(userId ? { userId } : {})
+    }
+
+    const { orders, total } = await listOrders({ where, skip, take: limit })
+
+    res.json({
+      success: true,
+      data: orders,
+      meta: buildPageMeta(page, limit, total)
+    })
   } catch (error) {
-    console.error('Error fetching orders:', error)
-    res.status(500).json({ message: 'Failed to fetch orders' })
+    next(error)
   }
 })
 
-// Update order status (admin only)
-router.put('/:id/status', authenticateToken, requireAdmin, [
-  body('status').isIn(['pending', 'processing', 'shipped', 'delivered', 'cancelled']).withMessage('Invalid status')
-], (req, res) => {
+router.put('/:id/status', authenticateToken, requireAdmin, writeRateLimit, validate(updateOrderStatusSchema), async (req, res, next) => {
   try {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ message: errors.array()[0].msg })
-    }
-
-    const orderIndex = orders.findIndex(o => o.id === req.params.id)
-    if (orderIndex === -1) {
-      return res.status(404).json({ message: 'Order not found' })
-    }
-
-    orders[orderIndex].status = req.body.status
-    res.json(orders[orderIndex])
+    const order = await updateOrderStatus(Number(req.params.id), req.validated.body.status)
+    res.json({ success: true, data: order })
   } catch (error) {
-    console.error('Error updating order status:', error)
-    res.status(500).json({ message: 'Failed to update order status' })
+    if (error.code === 'P2025') {
+      return next(new AppError(404, 'ORDER_NOT_FOUND', 'Order not found'))
+    }
+    next(error)
   }
 })
 
-// Cancel order
-router.put('/:id/cancel', authenticateToken, (req, res) => {
+router.put('/:id/cancel', authenticateToken, writeRateLimit, async (req, res, next) => {
   try {
-    const orderIndex = orders.findIndex(o => o.id === req.params.id)
-    if (orderIndex === -1) {
-      return res.status(404).json({ message: 'Order not found' })
+    const order = await findOrderById(Number(req.params.id))
+    if (!order) {
+      throw new AppError(404, 'ORDER_NOT_FOUND', 'Order not found')
     }
 
-    const order = orders[orderIndex]
-    
-    // Check if user owns the order
     if (order.userId !== req.user.userId) {
-      return res.status(403).json({ message: 'Access denied' })
+      throw new AppError(403, 'ACCESS_DENIED', 'Access denied')
     }
 
-    // Only allow cancellation of pending orders
     if (order.status !== 'pending') {
-      return res.status(400).json({ message: 'Only pending orders can be cancelled' })
+      throw new AppError(400, 'INVALID_ORDER_STATE', 'Only pending orders can be cancelled')
     }
 
-    order.status = 'cancelled'
-    res.json(order)
+    const cancelled = await updateOrderStatus(order.id, 'cancelled')
+    res.json({ success: true, data: cancelled })
   } catch (error) {
-    console.error('Error cancelling order:', error)
-    res.status(500).json({ message: 'Failed to cancel order' })
+    next(error)
   }
 })
 
-module.exports = router 
+module.exports = router

@@ -1,176 +1,233 @@
 const express = require('express')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
-const { body, validationResult } = require('express-validator')
-const router = express.Router()
-const pool = require('../config/db')
+const { randomUUID } = require('crypto')
+const validate = require('../middleware/validate')
+const { authenticateToken } = require('../middleware/auth')
+const { authRateLimit } = require('../middleware/rateLimiter')
+const AppError = require('../utils/AppError')
+const {
+  registerSchema,
+  loginSchema,
+  updateProfileSchema
+} = require('../validators/authValidator')
+const {
+  createUser,
+  findUserByEmail,
+  findUserById,
+  updateUser
+} = require('../repositories/userRepository')
+const {
+  createRefreshToken,
+  findRefreshToken,
+  deleteRefreshToken,
+  deleteExpiredRefreshTokens
+} = require('../repositories/authRepository')
 
-// Middleware to verify JWT token
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization']
-  const token = authHeader && authHeader.split(' ')[1]
-  if (!token) {
-    return res.status(401).json({ message: 'Access token required' })
-  }
-  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
-    if (err) {
-      return res.status(403).json({ message: 'Invalid token' })
-    }
-    req.user = user
-    next()
+const router = express.Router()
+
+function createAccessToken(user) {
+  return jwt.sign(
+    { userId: user.id, email: user.email, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
+  )
+}
+
+function setRefreshCookie(res, token) {
+  res.cookie('refreshToken', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000
   })
 }
 
-// Register
-router.post('/register', [
-  body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
-  body('email').isEmail().withMessage('Valid email required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
-], async (req, res) => {
+router.post('/register', authRateLimit, validate(registerSchema), async (req, res, next) => {
   try {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ message: errors.array()[0].msg })
+    const { name, email, password } = req.validated.body
+
+    const existing = await findUserByEmail(email)
+    if (existing) {
+      throw new AppError(400, 'USER_EXISTS', 'User already exists')
     }
-    const { name, email, password } = req.body
-    // Check if user already exists
-    const existing = await pool.query('SELECT * FROM users WHERE email = $1', [email])
-    if (existing.rows.length > 0) {
-      return res.status(400).json({ message: 'User already exists' })
-    }
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10)
-    // Create new user
-    const result = await pool.query(
-      'INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING *',
-      [name, email, hashedPassword, 'user']
-    )
-    const user = result.rows[0]
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '24h' }
-    )
-    const { password_hash, ...userWithoutPassword } = user
+
+    const passwordHash = await bcrypt.hash(password, 10)
+    const user = await createUser({
+      name,
+      email,
+      passwordHash,
+      role: 'user'
+    })
+
+    const accessToken = createAccessToken(user)
+    const refreshToken = randomUUID()
+
+    await createRefreshToken({
+      userId: user.id,
+      token: refreshToken,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    })
+
+    setRefreshCookie(res, refreshToken)
+
     res.status(201).json({
-      message: 'User registered successfully',
-      token,
-      user: userWithoutPassword
+      success: true,
+      data: {
+        token: accessToken,
+        user
+      }
     })
   } catch (error) {
-    console.error('Registration error:', error)
-    res.status(500).json({ message: 'Registration failed' })
+    next(error)
   }
 })
 
-// Login
-router.post('/login', [
-  body('email').isEmail().withMessage('Valid email required'),
-  body('password').notEmpty().withMessage('Password required')
-], async (req, res) => {
+router.post('/login', authRateLimit, validate(loginSchema), async (req, res, next) => {
   try {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ message: errors.array()[0].msg })
+    const { email, password } = req.validated.body
+
+    const user = await findUserByEmail(email)
+    if (!user) {
+      throw new AppError(400, 'INVALID_CREDENTIALS', 'Invalid credentials')
     }
-    const { email, password } = req.body
-    // Find user
-    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email])
-    if (result.rows.length === 0) {
-      return res.status(400).json({ message: 'Invalid credentials' })
-    }
-    const user = result.rows[0]
-    // Check password
-    const isValidPassword = await bcrypt.compare(password, user.password_hash)
+
+    const isValidPassword = await bcrypt.compare(password, user.passwordHash)
     if (!isValidPassword) {
-      return res.status(400).json({ message: 'Invalid credentials' })
+      throw new AppError(400, 'INVALID_CREDENTIALS', 'Invalid credentials')
     }
-    // Generate JWT token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '24h' }
-    )
-    const { password_hash, ...userWithoutPassword } = user
+
+    const accessToken = createAccessToken(user)
+    const refreshToken = randomUUID()
+
+    await deleteExpiredRefreshTokens()
+    await createRefreshToken({
+      userId: user.id,
+      token: refreshToken,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    })
+
+    setRefreshCookie(res, refreshToken)
+
     res.json({
-      message: 'Login successful',
-      token,
-      user: userWithoutPassword
+      success: true,
+      data: {
+        token: accessToken,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt
+        }
+      }
     })
   } catch (error) {
-    console.error('Login error:', error)
-    res.status(500).json({ message: 'Login failed' })
+    next(error)
   }
 })
 
-// Verify token
-router.get('/verify', authenticateToken, async (req, res) => {
+router.post('/refresh', authRateLimit, async (req, res, next) => {
   try {
-    const result = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.userId])
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'User not found' })
+    const refreshToken = req.cookies.refreshToken
+    if (!refreshToken) {
+      throw new AppError(401, 'AUTH_REQUIRED', 'Refresh token required')
     }
-    const { password_hash, ...userWithoutPassword } = result.rows[0]
-    res.json(userWithoutPassword)
+
+    const stored = await findRefreshToken(refreshToken)
+    if (!stored || stored.expiresAt < new Date()) {
+      throw new AppError(403, 'INVALID_REFRESH_TOKEN', 'Invalid refresh token')
+    }
+
+    const user = await findUserById(stored.userId)
+    if (!user) {
+      throw new AppError(404, 'USER_NOT_FOUND', 'User not found')
+    }
+
+    const accessToken = createAccessToken(user)
+
+    res.json({
+      success: true,
+      data: { token: accessToken }
+    })
   } catch (error) {
-    res.status(500).json({ message: 'Token verification failed' })
+    next(error)
   }
 })
 
-// Get user profile
-router.get('/profile', authenticateToken, async (req, res) => {
+router.post('/logout', async (req, res, next) => {
   try {
-    const result = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.userId])
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'User not found' })
+    const refreshToken = req.cookies.refreshToken
+    if (refreshToken) {
+      await deleteRefreshToken(refreshToken)
     }
-    const { password_hash, ...userWithoutPassword } = result.rows[0]
-    res.json(userWithoutPassword)
+
+    res.clearCookie('refreshToken')
+    res.json({
+      success: true,
+      data: { message: 'Logged out successfully' }
+    })
   } catch (error) {
-    res.status(500).json({ message: 'Failed to fetch profile' })
+    next(error)
   }
 })
 
-// Update user profile
-router.put('/profile', authenticateToken, [
-  body('name').optional().trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
-  body('email').optional().isEmail().withMessage('Valid email required')
-], async (req, res) => {
+router.get('/verify', authenticateToken, async (req, res, next) => {
   try {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ message: errors.array()[0].msg })
+    const user = await findUserById(req.user.userId)
+    if (!user) {
+      throw new AppError(404, 'USER_NOT_FOUND', 'User not found')
     }
-    const { name, email } = req.body
-    // Check if email is already taken by another user
+
+    res.json({
+      success: true,
+      data: user
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.get('/profile', authenticateToken, async (req, res, next) => {
+  try {
+    const user = await findUserById(req.user.userId)
+    if (!user) {
+      throw new AppError(404, 'USER_NOT_FOUND', 'User not found')
+    }
+
+    res.json({ success: true, data: user })
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.put('/profile', authenticateToken, validate(updateProfileSchema), async (req, res, next) => {
+  try {
+    const { name, email } = req.validated.body
+
     if (email) {
-      const existing = await pool.query('SELECT * FROM users WHERE email = $1 AND id != $2', [email, req.user.userId])
-      if (existing.rows.length > 0) {
-        return res.status(400).json({ message: 'Email already in use' })
+      const existing = await findUserByEmail(email)
+      if (existing && existing.id !== req.user.userId) {
+        throw new AppError(400, 'EMAIL_IN_USE', 'Email already in use')
       }
     }
-    // Update user
-    const fields = []
-    const values = []
-    let idx = 1
-    if (name) { fields.push(`name = $${idx++}`); values.push(name) }
-    if (email) { fields.push(`email = $${idx++}`); values.push(email) }
-    if (fields.length === 0) return res.status(400).json({ message: 'No fields to update' })
-    values.push(req.user.userId)
-    const result = await pool.query(
-      `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
-      values
-    )
-    const { password_hash, ...userWithoutPassword } = result.rows[0]
+
+    const user = await updateUser(req.user.userId, {
+      ...(name ? { name } : {}),
+      ...(email ? { email } : {})
+    })
+
     res.json({
-      message: 'Profile updated successfully',
-      user: userWithoutPassword
+      success: true,
+      data: {
+        message: 'Profile updated successfully',
+        user
+      }
     })
   } catch (error) {
-    console.error('Profile update error:', error)
-    res.status(500).json({ message: 'Profile update failed' })
+    next(error)
   }
 })
 
-module.exports = router 
+module.exports = router

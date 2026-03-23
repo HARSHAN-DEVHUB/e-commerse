@@ -1,57 +1,52 @@
 const express = require('express')
+const { authenticateToken, requireAdmin } = require('../middleware/auth')
+const { parsePagination, buildPageMeta } = require('../utils/pagination')
+const AppError = require('../utils/AppError')
+const { findUserById, listUsers } = require('../repositories/userRepository')
+
 const router = express.Router()
-const pool = require('../config/db')
 
-// Middleware to verify JWT token
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization']
-  const token = authHeader && authHeader.split(' ')[1]
-
-  if (!token) {
-    return res.status(401).json({ message: 'Access token required' })
-  }
-
-  const jwt = require('jsonwebtoken')
-  jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
-    if (err) {
-      return res.status(403).json({ message: 'Invalid token' })
-    }
-    req.user = user
-    next()
-  })
-}
-
-// Middleware to check admin role
-const requireAdmin = (req, res, next) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ message: 'Admin access required' })
-  }
-  next()
-}
-
-// Get all users (admin only)
-router.get('/', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/', authenticateToken, requireAdmin, async (req, res, next) => {
   try {
-    const result = await pool.query('SELECT id, name, email, role, created_at FROM users ORDER BY id')
-    res.json(result.rows)
+    const { page, limit, skip } = parsePagination(req.query)
+    const search = req.query.search?.trim()
+    const role = req.query.role?.trim()
+
+    const where = {
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { email: { contains: search, mode: 'insensitive' } }
+            ]
+          }
+        : {}),
+      ...(role ? { role } : {})
+    }
+
+    const { users, total } = await listUsers({ where, skip, take: limit })
+
+    res.json({
+      success: true,
+      data: users,
+      meta: buildPageMeta(page, limit, total)
+    })
   } catch (error) {
-    console.error('Error fetching users:', error)
-    res.status(500).json({ message: 'Failed to fetch users' })
+    next(error)
   }
 })
 
-// Get user by ID (admin only)
-router.get('/:id', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/:id', authenticateToken, requireAdmin, async (req, res, next) => {
   try {
-    const result = await pool.query('SELECT id, name, email, role, created_at FROM users WHERE id = $1', [req.params.id])
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'User not found' })
+    const user = await findUserById(Number(req.params.id))
+    if (!user) {
+      throw new AppError(404, 'USER_NOT_FOUND', 'User not found')
     }
-    res.json(result.rows[0])
+
+    res.json({ success: true, data: user })
   } catch (error) {
-    console.error('Error fetching user:', error)
-    res.status(500).json({ message: 'Failed to fetch user' })
+    next(error)
   }
 })
 
-module.exports = router 
+module.exports = router
