@@ -23,15 +23,16 @@ const Home = () => {
   return (
     <div className="min-h-screen">
       {/* Hero Section */}
-      <section className="relative bg-gradient-to-r from-primary-600 to-primary-800 text-white">
+      <section className="relative bg-gradient-to-r from-[#3a2b18] via-[#2b2116] to-[#17120d] text-[#f6efdf] overflow-hidden">
+        <div className="absolute inset-0 opacity-25" style={{ backgroundImage: 'radial-gradient(circle at 20% 20%, #c79a55 0%, transparent 30%), radial-gradient(circle at 80% 80%, #7a5c2f 0%, transparent 28%)' }} />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div>
               <h1 className="text-4xl md:text-6xl font-bold mb-6">
                 Discover Your
-                <span className="block text-secondary-300">Perfect Style</span>
+                <span className="block text-primary-200">Perfect Style</span>
               </h1>
-              <p className="text-xl mb-8 text-gray-200">
+              <p className="text-xl mb-8 text-[#e2d6bf]">
                 Explore our curated collection of premium clothing designed for the modern individual. 
                 From casual comfort to elegant sophistication, find your unique expression.
               </p>
@@ -46,13 +47,13 @@ const Home = () => {
             </div>
             <div className="hidden lg:block">
               <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-br from-secondary-500 to-secondary-700 rounded-2xl transform rotate-6"></div>
-                <div className="relative bg-white rounded-2xl p-8 transform -rotate-2">
+                <div className="absolute inset-0 bg-gradient-to-br from-primary-300 to-primary-700 rounded-2xl transform rotate-6 opacity-70"></div>
+                <div className="relative bg-[#f7f0e2] rounded-2xl p-8 transform -rotate-2 border border-[#c7a86b]/50">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-gray-100 rounded-lg h-32"></div>
-                    <div className="bg-gray-200 rounded-lg h-32"></div>
-                    <div className="bg-gray-200 rounded-lg h-32"></div>
-                    <div className="bg-gray-100 rounded-lg h-32"></div>
+                    <div className="bg-[#e8dcc6] rounded-lg h-32"></div>
+                    <div className="bg-[#d8c6a6] rounded-lg h-32"></div>
+                    <div className="bg-[#d8c6a6] rounded-lg h-32"></div>
+                    <div className="bg-[#e8dcc6] rounded-lg h-32"></div>
                   </div>
                 </div>
               </div>
@@ -62,7 +63,7 @@ const Home = () => {
       </section>
 
       {/* Features Section */}
-      <section className="py-16 bg-gray-50">
+      <section className="py-16 bg-[#f4ecdf]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold text-gray-900 mb-4">Why Choose StyleHub?</h2>
@@ -162,7 +163,7 @@ const Home = () => {
       </section>
 
       {/* Categories Section */}
-      <section className="py-16 bg-gray-50">
+      <section className="py-16 bg-[#f4ecdf]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold text-gray-900 mb-4">Shop by Category</h2>
@@ -195,10 +196,10 @@ const Home = () => {
       </section>
 
       {/* Newsletter Section */}
-      <section className="py-16 bg-primary-600 text-white">
+      <section className="py-16 bg-gradient-to-r from-[#2d2418] to-[#1d1711] text-[#f6efdf]">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl font-bold mb-4">Stay Updated</h2>
-          <p className="text-xl mb-8 text-primary-100">
+          <p className="text-xl mb-8 text-[#e2d6bf]">
             Subscribe to our newsletter for the latest trends and exclusive offers
           </p>
           <form className="flex flex-col sm:flex-row gap-4 max-w-md mx-auto">

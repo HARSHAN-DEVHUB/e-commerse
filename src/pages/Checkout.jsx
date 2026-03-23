@@ -83,7 +83,7 @@ const Checkout = () => {
 
   if (cart.length === 0 && !success) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
+      <div className="min-h-screen bg-[#f6efe2] flex items-center justify-center p-8">
         <div className="bg-white rounded-lg shadow-md p-8 text-center max-w-lg w-full">
           <h1 className="text-2xl font-bold mb-2">Checkout unavailable</h1>
           <p className="text-gray-600 mb-4">Your cart is empty. Add products before checkout.</p>
@@ -94,7 +94,7 @@ const Checkout = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-[#f6efe2] py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <h1 className="text-3xl font-bold mb-6">Checkout</h1>
 
