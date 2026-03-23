@@ -14,7 +14,8 @@ const {
   updateProduct,
   deleteProduct
 } = require('../repositories/productRepository')
-const { createProductSchema, updateProductSchema } = require('../validators/productValidator')
+const { createProductSchema, updateProductSchema, bulkProductActionSchema } = require('../validators/productValidator')
+const prisma = require('../lib/prisma')
 
 const router = express.Router()
 
@@ -130,6 +131,16 @@ router.post('/', authenticateToken, requireAdmin, writeRateLimit, validate(creat
       stock
     })
 
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.userId,
+        action: 'PRODUCT_CREATED',
+        entity: 'product',
+        entityId: String(product.id),
+        details: { name: product.name, stock: product.stock }
+      }
+    })
+
     res.status(201).json({ success: true, data: product })
   } catch (error) {
     next(error)
@@ -150,6 +161,16 @@ router.put('/:id', authenticateToken, requireAdmin, writeRateLimit, validate(upd
       ...(stock !== undefined ? { stock } : {})
     })
 
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.userId,
+        action: 'PRODUCT_UPDATED',
+        entity: 'product',
+        entityId: String(product.id),
+        details: { fields: Object.keys(req.validated.body) }
+      }
+    })
+
     res.json({ success: true, data: product })
   } catch (error) {
     if (error.code === 'P2025') {
@@ -163,6 +184,17 @@ router.delete('/:id', authenticateToken, requireAdmin, writeRateLimit, async (re
   try {
     const id = Number(req.params.id)
     const product = await deleteProduct(id)
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.userId,
+        action: 'PRODUCT_DELETED',
+        entity: 'product',
+        entityId: String(id),
+        details: { name: product.name }
+      }
+    })
+
     res.json({
       success: true,
       data: {
@@ -178,6 +210,78 @@ router.delete('/:id', authenticateToken, requireAdmin, writeRateLimit, async (re
   }
 })
 
+router.post('/bulk', authenticateToken, requireAdmin, writeRateLimit, validate(bulkProductActionSchema), async (req, res, next) => {
+  try {
+    const { ids, action, value } = req.validated.body
+
+    const result = await prisma.$transaction(async (tx) => {
+      if (action === 'adjustStock') {
+        const products = await tx.product.findMany({
+          where: { id: { in: ids } },
+          select: { id: true, stock: true }
+        })
+
+        if (products.length !== ids.length) {
+          throw new AppError(404, 'PRODUCT_NOT_FOUND', 'One or more selected products were not found')
+        }
+
+        for (const product of products) {
+          const nextStock = product.stock + value
+          if (nextStock < 0) {
+            throw new AppError(400, 'INVALID_STOCK_UPDATE', `Stock cannot be negative for product ${product.id}`)
+          }
+        }
+
+        await Promise.all(
+          products.map((product) => tx.product.update({
+            where: { id: product.id },
+            data: { stock: { increment: value } }
+          }))
+        )
+
+        return { updatedCount: products.length }
+      }
+
+      if (action === 'setCategory') {
+        const categoryExists = await tx.category.findUnique({ where: { id: value } })
+        if (!categoryExists) {
+          throw new AppError(404, 'CATEGORY_NOT_FOUND', 'Selected category not found')
+        }
+
+        const updated = await tx.product.updateMany({
+          where: { id: { in: ids } },
+          data: { categoryId: value }
+        })
+
+        return { updatedCount: updated.count }
+      }
+
+      const deleted = await tx.product.deleteMany({ where: { id: { in: ids } } })
+      return { deletedCount: deleted.count }
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.userId,
+        action: 'PRODUCT_BULK_ACTION',
+        entity: 'product',
+        details: {
+          action,
+          count: ids.length,
+          value: value ?? null
+        }
+      }
+    })
+
+    res.json({ success: true, data: result })
+  } catch (error) {
+    if (error.code === 'P2003') {
+      return next(new AppError(400, 'PRODUCT_IN_USE', 'Cannot delete products that are linked to existing orders'))
+    }
+    next(error)
+  }
+})
+
 router.post('/:id/image', authenticateToken, requireAdmin, writeRateLimit, upload.single('image'), async (req, res, next) => {
   try {
     const id = Number(req.params.id)
@@ -188,6 +292,16 @@ router.post('/:id/image', authenticateToken, requireAdmin, writeRateLimit, uploa
 
     const imagePath = `/uploads/${req.file.filename}`
     const product = await updateProduct(id, { imageUrl: imagePath })
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.userId,
+        action: 'PRODUCT_IMAGE_UPDATED',
+        entity: 'product',
+        entityId: String(product.id),
+        details: { imagePath }
+      }
+    })
 
     res.json({
       success: true,

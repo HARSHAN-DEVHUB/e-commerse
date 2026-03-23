@@ -170,6 +170,17 @@ router.get('/', authenticateToken, requireAdmin, async (req, res, next) => {
 router.put('/:id/status', authenticateToken, requireAdmin, writeRateLimit, validate(updateOrderStatusSchema), async (req, res, next) => {
   try {
     const order = await updateOrderStatus(Number(req.params.id), req.validated.body.status)
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.userId,
+        action: 'ORDER_STATUS_UPDATED',
+        entity: 'order',
+        entityId: String(order.id),
+        details: { status: order.status }
+      }
+    })
+
     res.json({ success: true, data: order })
   } catch (error) {
     if (error.code === 'P2025') {

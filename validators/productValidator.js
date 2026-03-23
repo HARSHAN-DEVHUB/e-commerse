@@ -30,7 +30,38 @@ const updateProductSchema = z.object({
   })
 })
 
+const bulkProductActionSchema = z.object({
+  body: z.object({
+    ids: z.array(z.coerce.number().int().positive()).min(1).max(200),
+    action: z.enum(['adjustStock', 'setCategory', 'delete']),
+    value: z.coerce.number().optional()
+  }).superRefine((value, ctx) => {
+    if (value.action === 'adjustStock') {
+      if (value.value === undefined || Number.isNaN(value.value) || !Number.isInteger(value.value)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['value'],
+          message: 'Integer value is required for adjustStock'
+        })
+      }
+    }
+
+    if (value.action === 'setCategory') {
+      if (value.value === undefined || Number.isNaN(value.value) || !Number.isInteger(value.value) || value.value <= 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['value'],
+          message: 'Positive category id is required for setCategory'
+        })
+      }
+    }
+  }),
+  query: z.object({}).optional(),
+  params: z.object({}).optional()
+})
+
 module.exports = {
   createProductSchema,
-  updateProductSchema
+  updateProductSchema,
+  bulkProductActionSchema
 }
