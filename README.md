@@ -394,6 +394,19 @@ Workflow in `.github/workflows/ci.yml` runs:
 5. Tests
 6. Production build
 
+### Package publishing
+
+Workflow in `.github/workflows/publish-package.yml` publishes a Docker image to GitHub Container Registry (GHCR) when:
+- A release is published
+- A tag like `v1.0.0` is pushed
+- The workflow is run manually
+
+Published image format:
+- `ghcr.io/<owner>/e-commerse:<version>`
+- `ghcr.io/<owner>/e-commerse:latest`
+
+If your organization restricts package creation, add repository secret `GHCR_TOKEN` (PAT with `write:packages`, `read:packages`, `repo`). The workflow will use it automatically.
+
 ## Docker and Deployment
 
 ### Local PostgreSQL only
